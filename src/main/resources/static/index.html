@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Knowledge Base Q&A System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 1rem;
+            background-color: #f8f9fa;
+        }
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: 20%;
+        }
+        .bot-message {
+            background-color: #e9ecef;
+            color: #212529;
+            margin-right: 20%;
+        }
+        .source-item {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .loading {
+            display: none;
+        }
+        .file-upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 0.375rem;
+            padding: 2rem;
+            text-align: center;
+            transition: border-color 0.15s ease-in-out;
+        }
+        .file-upload-area:hover {
+            border-color: #007bff;
+        }
+        .file-upload-area.dragover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 bg-light p-3">
+                <h4><i class="fas fa-database"></i> Knowledge Base Management</h4>
+                
+                <!-- Document Upload -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-upload"></i> Upload Document</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="file-upload-area" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+                            <p class="text-muted">Drag and drop files here or click to select</p>
+                            <input type="file" id="fileInput" class="d-none" accept=".pdf,.txt">
+                            <button class="btn btn-primary btn-sm" onclick="document.getElementById('fileInput').click()">
+                                Select File
+                            </button>
+                            <div id="selectedFileName" class="mt-2 text-success" style="font-size:13px;"></div>
+                            <button class="btn btn-success btn-sm mt-2" id="uploadBtn" onclick="uploadSelectedFile()" disabled>Upload</button>
+                            <div id="uploadStatus" class="mt-2" style="font-size:13px;"></div>
+                        </div>
+                        <div class="mt-2">
+                            <input type="text" class="form-control form-control-sm" id="sourceInput" 
+                                   placeholder="Document source" value="manual">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Document List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-list"></i> Document List</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="documentList">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i> Loading...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="col-md-9 p-3">
+                <h2><i class="fas fa-robot"></i> RAG Intelligent Q&A</h2>
+                <p class="text-muted">Based on your private knowledge base for intelligent Q&A</p>
+
+                <!-- Q&A Area -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-comments"></i> Chat</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chat-container" id="chatContainer">
+                            <div class="message bot-message">
+                                <strong>AI Assistant:</strong> Hello! Please upload documents to start asking questions.
+                            </div>
+                        </div>
+                        
+                        <div class="input-group mt-3">
+                            <input type="text" class="form-control" id="questionInput" 
+                                   placeholder="Enter your question..." onkeypress="handleKeyPress(event)">
+                            <button class="btn btn-primary" onclick="askQuestion()">Send</button>
+                        </div>
+                        
+                        <div class="loading text-center mt-2" id="loading">
+                            Thinking...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Source Information -->
+                <div class="card mt-3" id="sourcesCard" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-info-circle"></i> Reference Sources</h6>
+                    </div>
+                    <div class="card-body" id="sourcesContainer">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let documents = [];
+
+        // Execute after page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDocuments();
+            setupFileUpload();
+        });
+
+        // Setup file upload
+        function setupFileUpload() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            // Click upload area triggers file input
+            uploadArea.addEventListener('click', (e) => {
+                // Only trigger if not clicking the upload button itself
+                if (e.target === uploadArea) fileInput.click();
+            });
+
+            // File selection via dialog
+            fileInput.addEventListener('change', onFileSelected);
+
+            // Drag and drop support
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        }
+
+        // Show selected file name, enable upload button
+        function onFileSelected() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            const fileNameDiv = document.getElementById('selectedFileName');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadStatus = document.getElementById('uploadStatus');
+            if (file) {
+                fileNameDiv.innerHTML = `<span><i class='fas fa-file'></i> ${file.name}</span> <button class='btn btn-link btn-sm text-danger p-0 ms-2' onclick='clearSelectedFile()'><i class='fas fa-times-circle'></i></button>`;
+                uploadBtn.disabled = false;
+                uploadStatus.innerHTML = '';
+            } else {
+                fileNameDiv.innerHTML = '';
+                uploadBtn.disabled = true;
+                uploadStatus.innerHTML = '';
+            }
+        }
+
+        // Only upload when user clicks the upload button
+        function uploadSelectedFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        // Upload file with status feedback
+        function uploadFile(file) {
+            const sourceInput = document.getElementById('sourceInput');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const fileInput = document.getElementById('fileInput');
+            const fileNameDiv = document.getElementById('selectedFileName');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            const formData = new FormData();
+            formData.append('file', file);
+            if (sourceInput) {
+                formData.append('source', sourceInput.value);
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/documents/upload', true);
+
+            xhr.onload = function () {
+                if (xhr.status === 200) {
+                    uploadStatus.innerHTML = `<span class='text-success'><i class='fas fa-check-circle'></i> Upload successful!</span>`;
+                    setTimeout(() => {
+                        fileInput.value = '';
+                        fileNameDiv.innerHTML = '';
+                        uploadStatus.innerHTML = '';
+                        uploadBtn.disabled = true;
+                        loadDocuments();
+                    }, 1200);
+                } else {
+                    uploadStatus.innerHTML = `<span class='text-danger'><i class='fas fa-times-circle'></i> Upload failed</span>`;
+                }
+            };
+
+            xhr.onerror = function () {
+                uploadStatus.innerHTML = `<span class='text-danger'><i class='fas fa-times-circle'></i> Upload error</span>`;
+            };
+
+            xhr.send(formData);
+        }
+
+        // Clear selected file and reset UI
+        function clearSelectedFile() {
+            const fileInput = document.getElementById('fileInput');
+            fileInput.value = '';
+            document.getElementById('selectedFileName').innerHTML = '';
+            document.getElementById('uploadStatus').innerHTML = '';
+            document.getElementById('uploadBtn').disabled = true;
+        }
+
+        // Load document list
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/documents');
+                if (response.ok) {
+                    documents = await response.json();
+                    displayDocuments();
+                }
+            } catch (error) {
+                console.error('Load documents error:', error);
+            }
+        }
+
+        // Display document list
+        function displayDocuments() {
+            const documentList = document.getElementById('documentList');
+            
+            if (documents.length === 0) {
+                documentList.innerHTML = '<div class="text-center text-muted">No documents</div>';
+                return;
+            }
+
+            documentList.innerHTML = documents.map(doc => `
+                <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+                    <div>
+                        <i class="fas fa-file-pdf text-danger"></i>
+                        <small class="ms-1">${doc.fileName}</small>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="deleteDocument(${doc.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Delete document
+        async function deleteDocument(id) {
+            if (!confirm('Are you sure you want to delete this document?')) return;
+
+            try {
+                const response = await fetch(`/api/documents/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('Delete successful!');
+                    loadDocuments();
+                } else {
+                    alert('Delete failed');
+                }
+            } catch (error) {
+                alert('Delete error: ' + error.message);
+            }
+        }
+
+        // Handle key press events
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                askQuestion(); 
+            }
+        }
+
+        // Ask question
+        async function askQuestion() {
+            const questionInput = document.getElementById('questionInput');
+            const question = questionInput.value.trim();
+
+            if (!question) {
+                alert('Please enter a question');
+                return;
+            }
+
+            // Add user message
+            addMessage('user', question);
+            questionInput.value = '';
+
+            // Show loading state
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+
+            try {
+                // Send question to backend
+                const response = await fetch('/api/rag/ask-with-sources', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Add AI reply
+                    addMessage('bot', data.answer);
+                    
+                    // Display sources if available
+                    if (data.sources && data.sources.length > 0) {
+                        displaySources(data.sources);
+                    }
+                } else {
+                    addMessage('bot', 'Sorry, there was an error processing your question.');
+                }
+            } catch (error) {
+                addMessage('bot', 'Sorry, there was a network connection issue.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Add message to chat area
+        function addMessage(type, content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            
+            const icon = type === 'user' ? 'fas fa-user' : 'fas fa-robot';
+            const name = type === 'user' ? 'You' : 'AI Assistant';
+            
+            messageDiv.innerHTML = `<strong><i class="${icon}"></i> ${name}:</strong> ${content}`;
+            chatContainer.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Display source information
+        function displaySources(sources) {
+            const sourcesCard = document.getElementById('sourcesCard');
+            const sourcesContainer = document.getElementById('sourcesContainer');
+            
+            sourcesContainer.innerHTML = sources.map(source => `
+                <div class="source-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${source.fileName}</strong>
+                            <small class="text-muted ms-2">Similarity: ${(source.similarity * 100).toFixed(1)}%</small>
+                        </div>
+                    </div>
+                    <div class="mt-1">
+                        <small class="text-muted">${source.content.substring(0, 200)}${source.content.length > 200 ? '...' : ''}</small>
+                    </div>
+                </div>
+            `).join('');
+            
+            sourcesCard.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 

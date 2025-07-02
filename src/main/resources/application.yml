@@ -1,0 +1,44 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: rag-demo
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/rag_demo
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+# RAG Configuration
+rag:
+  chunk-size: 1000
+  chunk-overlap: 200
+  max-results: 5
+  similarity-threshold: 0.7
+
+# Gemini Configuration
+google:
+  api-key: ${GOOGLE_API_KEY:your-gemini-api-key}
+  model: gemini-2.5-flash
+  embedding-model: text-embedding-004
+
+logging:
+  level:
+    com.example.ragdemo: DEBUG
+    dev.langchain4j: INFO
